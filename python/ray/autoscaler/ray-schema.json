@@ -11,6 +11,84 @@
                 "type": "string",
                 "description": "shell command"
             }
+        },
+        "aws_ec2_security_group_rule": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "AWS EC2 instance security group rule",
+            "properties": {
+                "FromPort": {
+                    "type": "integer",
+                    "description": "Port range start (inclusive)"
+                },
+                "ToPort": {
+                    "type": "integer",
+                    "description": "Port range end (inclusive)"
+                },
+                "IpProtocol": {
+                    "type": "string",
+                    "description": "Protocol"
+                },
+                "IpRanges": {
+                    "type": "array",
+                    "description": "CIDR IPv4 blocks",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "CidrIp": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "Ipv6Ranges": {
+                    "type": "array",
+                    "description": "CIDR IPv6 blocks",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "CidrIpv6": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "UserIdGroupPairs": {
+                    "type": "array",
+                    "description": "Security group identifiers",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "GroupId": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "PrefixListIds": {
+                    "type": "array",
+                    "description": "Prefix list identifiers",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "PrefixListId": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "aws_ec2_security_group_rules": {
+            "type": "array",
+            "description": "AWS EC2 instance security group rules",
+            "items": {
+                "$ref": "#/definitions/aws_ec2_security_group_rule"
+            }
         }
     },
     "required": [
@@ -83,6 +161,31 @@
                 "use_internal_ips": {
                     "type": "boolean",
                     "description": "don't require public ips"
+                },
+                "security_group": {
+                    "type": "object",
+                    "description": "AWS EC2 security group configuration",
+                    "properties": {
+                        "inbound_rules": {
+                            "$ref": "#/definitions/aws_ec2_security_group_rules"
+                        },
+                        "head": {
+                            "type": "object",
+                            "properties": {
+                                "inbound_rules": {
+                                    "$ref": "#/definitions/aws_ec2_security_group_rules"
+                                }
+                            }
+                        },
+                        "workers": {
+                            "type": "object",
+                            "properties": {
+                                "inbound_rules": {
+                                    "$ref": "#/definitions/aws_ec2_security_group_rules"
+                                }
+                            }
+                        }
+                    }
                 },
                 "namespace": {
                     "type": "string",

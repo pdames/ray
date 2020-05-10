@@ -1,0 +1,113 @@
+cluster_name: security-groups
+
+max_workers: 1
+
+provider:
+    type: aws
+    region: us-west-2
+    availability_zone: us-west-2a
+
+    security_group:
+        # AWS EC2 inbound rules to use with the head node security group.
+        # Specifying one or more rules below represents a directive to both add
+        # them to the security group if they don't already exist, and to revoke
+        # any unspecified rules. However, default rules authorizing
+        # cross-communication between head and worker node security groups
+        # cannot be revoked.
+        head:
+            # Inbound rules are specified as an array of IpPermission objects.
+            # See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html#EC2.Client.authorize_security_group_ingress.
+            # Any sources present in this list but not currently associated
+            # with your head node security group will be authorized. Any
+            # sources not in this list but associated with your head node
+            # security group rules will be revoked.
+            inbound_rules:
+                - FromPort: 80 # port range start (inclusive)
+                  ToPort: 80 # port range end (inclusive)
+                  IpProtocol: tcp # protocol, case-insensitive (tcp, udp, icmp, or icmpv6)
+                  IpRanges:
+                      - CidrIp: 192.168.1.0/24
+                  Ipv6Ranges:
+                      - CidrIpv6: 2002::1234:abcd:ffff:c0a8:101/128
+                  # PrefixListIds:
+                  #    - PrefixListId: pl-de4dbe3f
+                  # UserIdGroupPairs:
+                  #    - GroupId: sg-d3afb3ef
+
+                # This redundant rule on TCP port 80 will have its targets
+                # automatically grouped together with the above rule. The
+                # 192.168.1.0/24 target will be deduped and the 10.1.0.0/16
+                # target will be appended.
+                - FromPort: 80
+                  ToPort: 80
+                  IpProtocol: tcp
+                  IpRanges:
+                      - CidrIp: 192.168.1.0/24
+                      - CidrIp: 10.1.0.0/16
+
+        # AWS EC2 inbound rules for the worker node security group.
+        workers:
+            inbound_rules:
+                # This rule overrides the default inbound SSH sources specified
+                # in "inbound_rules" below. A rule with a port and protocol but
+                # no targets revokes all communication on that port and
+                # protocol, so the below rule ensures that all inbound SSH
+                # connection sources are revoked from the worker security
+                # group.
+                - FromPort: 22
+                  ToPort: 22
+                  IpProtocol: tcp
+
+                # Note that specifying the below rule has no effect, since all
+                # rules on any unspecified port and protocol would be revoked
+                # anyways, and any requests to revoke rules required for proper
+                # functionality of your Ray cluster, like those permitting all
+                # traffic to pass between head/worker nodes, will be discarded.
+                - FromPort: -1 # set port and protocol to -1 for "All Traffic"
+                  ToPort: -1
+                  IpProtocol: "-1"
+
+        # Default AWS EC2 inbound rules for both head and worker node security
+        # groups. Any rules using the same port and protocol as head or worker
+        # rules specified explicitly above will be overridden.
+        inbound_rules:
+            # Any inbound rule specified without a port and protocol will be
+            # applied across all default/required head and worker node security
+            # group channels, except those authorizing head/worker node
+            # cross-communication. This rule will currently be applied to
+            # inbound SSH sources, and is equivalent to specifying the
+            # same rule under both head and worker inbound rules above.
+            - IpRanges:
+                - CidrIp: 0.0.0.0/0
+
+auth:
+    ssh_user: ubuntu
+
+#head_node:
+    # Any security group specified below will override the head inbound_rules
+    # config specified above and will remain unchanged during cluster create
+    # or update operations.
+    # SecurityGroupIds:
+    #     - sg-f13e7f007ed
+
+    # If required, head and worker nodes can exist on different subnets and
+    # communicate via VPC peering.
+    # VPC peering overview: https://docs.aws.amazon.com/vpc/latest/userguide/vpc-peering.html.
+    # Setup VPC peering: https://docs.aws.amazon.com/vpc/latest/peering/create-vpc-peering-connection.html.
+    # Configure VPC peering route tables: https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-routing.html.
+    # To enable external SSH connectivity, you should also ensure that your VPC
+    # is configured to assign public IPv4 addresses to every EC2 instance
+    # assigned to it.
+    # SubnetIds:
+    #     - subnet-fa7c47
+
+#worker_nodes:
+    # Any security group specified below will override the workers
+    # inbound_rules config specified above, and will remain unchanged during
+    # cluster create or update operations.
+    # SecurityGroupIds:
+    #     - sg-b47ca7
+
+    # Optionally place worker nodes on a different subnet from the head node.
+    # SubnetIds:
+    #     - subnet-c47fe37
