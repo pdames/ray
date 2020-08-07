@@ -21,8 +21,8 @@ def set_resource(resource_name, capacity, client_id=None):
         None
 
     Raises:
-          ValueError: This exception is raised when a non-negative capacity is
-            specified.
+          ValueError: This exception is raised when a negative or non-integer
+          capacity is specified.
     """
     if client_id is not None:
         client_id_obj = ray.ClientID(ray.utils.hex_to_binary(client_id))

@@ -1010,13 +1010,13 @@ def _start_redis_instance(executable,
                                     ulimit_n - redis_client_buffer)
 
     # Increase the hard and soft limits for the redis client pubsub buffer to
-    # 128MB. This is a hack to make it less likely for pubsub messages to be
+    # 256MB. This is a hack to make it less likely for pubsub messages to be
     # dropped and for pubsub connections to therefore be killed.
     cur_config = (redis_client.config_get("client-output-buffer-limit")[
         "client-output-buffer-limit"])
     cur_config_list = cur_config.split()
     assert len(cur_config_list) == 12
-    cur_config_list[8:] = ["pubsub", "134217728", "134217728", "60"]
+    cur_config_list[8:] = ["pubsub", "268435456", "268435456", "60"]
     redis_client.config_set("client-output-buffer-limit",
                             " ".join(cur_config_list))
     # Put a time stamp in Redis to indicate when it was started.
