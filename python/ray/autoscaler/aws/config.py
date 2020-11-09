@@ -1,6 +1,7 @@
 from distutils.version import StrictVersion
 from functools import lru_cache
 from functools import partial
+import copy
 import itertools
 import json
 import os
@@ -153,13 +154,11 @@ def log_to_cli(config):
                     _tags=workers_tags)
 
         tags = {"default": _log_info["head_instance_profile_src"] == "default"}
-
         profile_arn = config["head_node"]["IamInstanceProfile"].get("Arn")
         profile_name = _arn_to_name(profile_arn) \
             if profile_arn \
             else config["head_node"]["IamInstanceProfile"]["Name"]
         cli_logger.labeled_value("IAM Profile", "{}", profile_name, _tags=tags)
-
         print_info("EC2 Key pair", "KeyName", "keypair_src", "keypair_src")
         print_info(
             "VPC Subnets",
@@ -184,6 +183,15 @@ def log_to_cli(config):
 
 
 def bootstrap_aws(config):
+
+    # If a LaunchTemplate is provided, extract the necessary fields for the
+    # config stages below.
+    config = _configure_from_launch_template(config)
+
+    # If NetworkInterfaces are provided, extract the necessary fields for the
+    # config stages below.
+    config = _configure_from_network_interfaces(config)
+
     # The head node needs to have an IAM role that allows it to create further
     # EC2 instances.
     config = _configure_iam_role(config)
@@ -400,6 +408,7 @@ def _configure_subnet(config):
 
     subnet_ids = [s.subnet_id for s in subnets]
     subnet_descr = [(s.subnet_id, s.availability_zone) for s in subnets]
+
     if "SubnetIds" not in config["head_node"]:
         _set_config_info(head_subnet_src="default")
         config["head_node"]["SubnetIds"] = subnet_ids
@@ -428,8 +437,9 @@ def _configure_security_group(config):
 
     node_types_to_configure = [
         node_type for node_type, config_key in NODE_TYPE_CONFIG_KEYS.items()
-        if "SecurityGroupIds" not in config[NODE_TYPE_CONFIG_KEYS[node_type]]
+        if "SecurityGroupIds" not in config[config_key]
     ]
+
     if not node_types_to_configure:
         return config  # have user-defined groups
 
@@ -437,7 +447,6 @@ def _configure_security_group(config):
 
     if NODE_TYPE_HEAD in node_types_to_configure:
         head_sg = security_groups[NODE_TYPE_HEAD]
-
         _set_config_info(head_security_group_src="default")
         cli_logger.old_info(
             logger, "_configure_security_group: "
@@ -447,7 +456,6 @@ def _configure_security_group(config):
 
     if NODE_TYPE_WORKER in node_types_to_configure:
         workers_sg = security_groups[NODE_TYPE_WORKER]
-
         _set_config_info(workers_security_group_src="default")
         cli_logger.old_info(
             logger, "_configure_security_group: "
@@ -697,6 +705,86 @@ def _get_key(key_name, config):
         handle_boto_error(exc, "Failed to fetch EC2 key pair {} from AWS.",
                           cf.bold(key_name))
         raise exc
+
+
+def _configure_from_launch_template(config):
+    for cfg_key in NODE_TYPE_CONFIG_KEYS.values():
+        config = _configure_node_type_from_launch_template(config, cfg_key)
+    return config
+
+
+def _configure_node_type_from_launch_template(config, node_type):
+    node_cfg = config[node_type]
+    if "LaunchTemplate" not in node_cfg:
+        return config
+
+    ec2 = _client("ec2", config)
+    kwargs = copy.deepcopy(node_cfg["LaunchTemplate"])
+    template_version = kwargs.pop("Version", "$Default")
+    kwargs["Versions"] = [template_version] if template_version else []
+
+    template = ec2.describe_launch_template_versions(**kwargs)
+    lt_versions = template["LaunchTemplateVersions"]
+    cli_logger.doassert(
+        len(lt_versions) == 1,
+        "Expected to find 1 launch template but found {}".format(
+            len(lt_versions)))
+    assert len(lt_versions) == 1, \
+        "Expected to find 1 launch template but found {}" \
+        .format(len(lt_versions))
+    lt_data = template["LaunchTemplateVersions"][0]["LaunchTemplateData"]
+
+    # override launch template parameters with explicit node config parameters
+    lt_data.update(node_cfg)
+    # copy all new launch template parameters back to node config
+    node_cfg.update(lt_data)
+
+    return config
+
+
+def _configure_from_network_interfaces(config):
+    for cfg_key in NODE_TYPE_CONFIG_KEYS.values():
+        config = _configure_node_type_from_network_interface(config, cfg_key)
+    return config
+
+
+def _configure_node_type_from_network_interface(config, node_type):
+    node_cfg = config[node_type]
+    if "NetworkInterfaces" not in node_cfg:
+        return config
+    _configure_subnets_and_groups_from_network_interfaces(node_cfg)
+    return config
+
+
+def _configure_subnets_and_groups_from_network_interfaces(node_cfg):
+    # If NetworkInterfaces are defined, SubnetId and SecurityGroupIds
+    # can't be specified in head/worker node config.
+    conflict_keys = ["SubnetId", "SubnetIds", "SecurityGroupIds"]
+    if any(conflict in node_cfg for conflict in conflict_keys):
+        raise ValueError(
+            "If NetworkInterfaces are defined, subnets and security groups"
+            "must ONLY be given in each NetworkInterface.")
+    if not all(_subnets_in_network_config(node_cfg)):
+        raise ValueError(
+            "NetworkInterfaces are defined but at least one is missing a "
+            "subnet. Please ensure all interfaces have a subnet assigned.")
+    if not all(_security_groups_in_network_config(node_cfg)):
+        raise ValueError(
+            "NetworkInterfaces are defined but at least one is missing a "
+            "security group. Please ensure all interfaces have a security "
+            "group assigned.")
+    node_cfg["SubnetIds"] = _subnets_in_network_config(node_cfg)
+    node_cfg["SecurityGroupIds"] = _security_groups_in_network_config(node_cfg)
+
+
+def _subnets_in_network_config(config):
+    return [
+        ni.get("SubnetId", "") for ni in config.get("NetworkInterfaces", [])
+    ]
+
+
+def _security_groups_in_network_config(config):
+    return [ni.get("Groups", []) for ni in config.get("NetworkInterfaces", [])]
 
 
 def _client(name, config):

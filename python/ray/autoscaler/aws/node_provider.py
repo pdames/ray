@@ -294,7 +294,13 @@ class AWSNodeProvider(NodeProvider):
             "ResourceType": "instance",
             "Tags": tag_pairs,
         }]
+
         user_tag_specs = conf.get("TagSpecifications", [])
+
+        # SubnetIds is not a real config key: we must resolve to a
+        # single SubnetId before invoking the AWS API.
+        subnet_ids = conf.pop("SubnetIds")
+
         # Allow users to add tags and override values of existing
         # tags with their own. This only applies to the resource type
         # "instance". All other resource types are appended to the list of
@@ -313,33 +319,38 @@ class AWSNodeProvider(NodeProvider):
             else:
                 tag_specs += [user_tag_spec]
 
-        # SubnetIds is not a real config key: we must resolve to a
-        # single SubnetId before invoking the AWS API.
-        subnet_ids = conf.pop("SubnetIds")
+        # update config with min/max node counts and tag specs
+        conf.update({
+            "MinCount": 1,
+            "MaxCount": count,
+            "TagSpecifications": tag_specs
+        })
 
+        cli_logger_tags = {}
         for attempt in range(1, BOTO_CREATE_MAX_RETRIES + 1):
             try:
-                subnet_id = subnet_ids[self.subnet_idx % len(subnet_ids)]
+                if "NetworkInterfaces" in conf:
+                    net_ifs = conf["NetworkInterfaces"]
+                    # remove security group IDs previously copied from network
+                    # interfaces (create_instances call fails otherwise)
+                    conf.pop("SecurityGroupIds")
+                    cli_logger_tags["network_interfaces"] = str(net_ifs)
+                else:
+                    subnet_id = subnet_ids[self.subnet_idx % len(subnet_ids)]
+                    self.subnet_idx += 1
+                    conf["SubnetId"] = subnet_id
+                    cli_logger_tags["subnet_id"] = subnet_id
 
                 cli_logger.old_info(
                     logger, "NodeProvider: calling create_instances "
-                    "with {} (count={}).", subnet_id, count)
+                    "with {} (count={}).", cli_logger_tags, count)
 
-                self.subnet_idx += 1
-                conf.update({
-                    "MinCount": 1,
-                    "MaxCount": count,
-                    "SubnetId": subnet_id,
-                    "TagSpecifications": tag_specs
-                })
                 created = self.ec2_fail_fast.create_instances(**conf)
 
                 # todo: timed?
                 # todo: handle plurality?
                 with cli_logger.group(
-                        "Launching {} nodes",
-                        count,
-                        _tags=dict(subnet_id=subnet_id)):
+                        "Launching {} nodes", count, _tags=cli_logger_tags):
                     for instance in created:
                         cli_logger.print(
                             "Launched instance {}",
