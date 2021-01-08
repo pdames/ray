@@ -37,6 +37,7 @@ class WorkerInterface {
  public:
   /// A destructor responsible for freeing all worker state.
   virtual ~WorkerInterface() {}
+  virtual rpc::WorkerType GetWorkerType() const = 0;
   virtual void MarkDead() = 0;
   virtual bool IsDead() const = 0;
   virtual void MarkBlocked() = 0;
@@ -59,7 +60,6 @@ class WorkerInterface {
   virtual bool AddBlockedTaskId(const TaskID &task_id) = 0;
   virtual bool RemoveBlockedTaskId(const TaskID &task_id) = 0;
   virtual const std::unordered_set<TaskID> &GetBlockedTaskIds() const = 0;
-  virtual void AssignJobId(const JobID &job_id) = 0;
   virtual const JobID &GetAssignedJobId() const = 0;
   virtual void AssignActorId(const ActorID &actor_id) = 0;
   virtual const ActorID &GetActorId() const = 0;
@@ -80,6 +80,9 @@ class WorkerInterface {
   virtual void AcquireTaskCpuResources(const ResourceIdSet &cpu_resources) = 0;
 
   virtual void DirectActorCallArgWaitComplete(int64_t tag) = 0;
+
+  virtual const BundleID &GetBundleId() const = 0;
+  virtual void SetBundleId(const BundleID &bundle_id) = 0;
 
   // Setter, geter, and clear methods  for allocated_instances_.
   virtual void SetAllocatedInstances(
@@ -103,11 +106,11 @@ class WorkerInterface {
 
   virtual Task &GetAssignedTask() = 0;
 
-  virtual void SetAssignedTask(Task &assigned_task) = 0;
+  virtual void SetAssignedTask(const Task &assigned_task) = 0;
 
   virtual bool IsRegistered() = 0;
 
-  virtual rpc::CoreWorkerClient *rpc_client() = 0;
+  virtual rpc::CoreWorkerClientInterface *rpc_client() = 0;
 };
 
 /// Worker class encapsulates the implementation details of a worker. A worker
@@ -117,11 +120,13 @@ class Worker : public WorkerInterface {
  public:
   /// A constructor that initializes a worker object.
   /// NOTE: You MUST manually set the worker process.
-  Worker(const WorkerID &worker_id, const Language &language,
-         const std::string &ip_address, std::shared_ptr<ClientConnection> connection,
+  Worker(const JobID &job_id, const WorkerID &worker_id, const Language &language,
+         rpc::WorkerType worker_type, const std::string &ip_address,
+         std::shared_ptr<ClientConnection> connection,
          rpc::ClientCallManager &client_call_manager);
   /// A destructor responsible for freeing all worker state.
   ~Worker() {}
+  rpc::WorkerType GetWorkerType() const;
   void MarkDead();
   bool IsDead() const;
   void MarkBlocked();
@@ -144,7 +149,6 @@ class Worker : public WorkerInterface {
   bool AddBlockedTaskId(const TaskID &task_id);
   bool RemoveBlockedTaskId(const TaskID &task_id);
   const std::unordered_set<TaskID> &GetBlockedTaskIds() const;
-  void AssignJobId(const JobID &job_id);
   const JobID &GetAssignedJobId() const;
   void AssignActorId(const ActorID &actor_id);
   const ActorID &GetActorId() const;
@@ -165,6 +169,9 @@ class Worker : public WorkerInterface {
   void AcquireTaskCpuResources(const ResourceIdSet &cpu_resources);
 
   void DirectActorCallArgWaitComplete(int64_t tag);
+
+  const BundleID &GetBundleId() const;
+  void SetBundleId(const BundleID &bundle_id);
 
   // Setter, geter, and clear methods  for allocated_instances_.
   void SetAllocatedInstances(
@@ -199,11 +206,11 @@ class Worker : public WorkerInterface {
 
   Task &GetAssignedTask() { return assigned_task_; };
 
-  void SetAssignedTask(Task &assigned_task) { assigned_task_ = assigned_task; };
+  void SetAssignedTask(const Task &assigned_task) { assigned_task_ = assigned_task; };
 
   bool IsRegistered() { return rpc_client_ != nullptr; }
 
-  rpc::CoreWorkerClient *rpc_client() {
+  rpc::CoreWorkerClientInterface *rpc_client() {
     RAY_CHECK(IsRegistered());
     return rpc_client_.get();
   }
@@ -215,6 +222,8 @@ class Worker : public WorkerInterface {
   Process proc_;
   /// The language type of this worker.
   Language language_;
+  /// The type of the worker.
+  rpc::WorkerType worker_type_;
   /// IP address of this worker.
   std::string ip_address_;
   /// Port assigned to this worker by the raylet. If this is 0, the actual
@@ -232,6 +241,9 @@ class Worker : public WorkerInterface {
   JobID assigned_job_id_;
   /// The worker's actor ID. If this is nil, then the worker is not an actor.
   ActorID actor_id_;
+  /// The worker's placement group bundle. It is used to detect if the worker is
+  /// associated with a placement group bundle.
+  BundleID bundle_id_;
   /// Whether the worker is dead.
   bool dead_;
   /// Whether the worker is blocked. Workers become blocked in a `ray.get`, if

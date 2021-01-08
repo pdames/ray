@@ -1,8 +1,10 @@
 import numpy as np
+import gym
 
 from ray.rllib.models.tf.misc import normc_initializer
 from ray.rllib.models.tf.tf_modelv2 import TFModelV2
 from ray.rllib.utils.framework import get_activation_fn, try_import_tf
+from ray.rllib.utils.typing import Dict, TensorType, List, ModelConfigDict
 
 tf1, tf, tfv = try_import_tf()
 
@@ -10,8 +12,9 @@ tf1, tf, tfv = try_import_tf()
 class FullyConnectedNetwork(TFModelV2):
     """Generic fully connected network implemented in ModelV2 API."""
 
-    def __init__(self, obs_space, action_space, num_outputs, model_config,
-                 name):
+    def __init__(self, obs_space: gym.spaces.Space,
+                 action_space: gym.spaces.Space, num_outputs: int,
+                 model_config: ModelConfigDict, name: str):
         super(FullyConnectedNetwork, self).__init__(
             obs_space, action_space, num_outputs, model_config, name)
 
@@ -33,7 +36,7 @@ class FullyConnectedNetwork(TFModelV2):
 
         # We are using obs_flat, so take the flattened shape as input.
         inputs = tf.keras.layers.Input(
-            shape=(np.product(obs_space.shape), ), name="observations")
+            shape=(int(np.product(obs_space.shape)), ), name="observations")
         # Last hidden layer output (before logits outputs).
         last_layer = inputs
         # The action distribution outputs.
@@ -75,7 +78,7 @@ class FullyConnectedNetwork(TFModelV2):
             # Adjust num_outputs to be the number of nodes in the last layer.
             else:
                 self.num_outputs = (
-                    [np.product(obs_space.shape)] + hiddens[-1:])[-1]
+                    [int(np.product(obs_space.shape))] + hiddens[-1:])[-1]
 
         # Concat the log std vars to the end of the state-dependent means.
         if free_log_std and logits_out is not None:
@@ -113,9 +116,11 @@ class FullyConnectedNetwork(TFModelV2):
                       if logits_out is not None else last_layer), value_out])
         self.register_variables(self.base_model.variables)
 
-    def forward(self, input_dict, state, seq_lens):
+    def forward(self, input_dict: Dict[str, TensorType],
+                state: List[TensorType],
+                seq_lens: TensorType) -> (TensorType, List[TensorType]):
         model_out, self._value_out = self.base_model(input_dict["obs_flat"])
         return model_out, state
 
-    def value_function(self):
+    def value_function(self) -> TensorType:
         return tf.reshape(self._value_out, [-1])

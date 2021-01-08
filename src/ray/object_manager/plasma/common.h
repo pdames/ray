@@ -24,6 +24,7 @@
 #include <unordered_map>
 
 #include "ray/common/id.h"
+#include "ray/object_manager/format/object_manager_generated.h"
 #include "ray/object_manager/plasma/compat.h"
 
 #ifdef PLASMA_CUDA
@@ -32,7 +33,9 @@
 
 namespace plasma {
 
+using ray::NodeID;
 using ray::ObjectID;
+using ray::WorkerID;
 
 enum class ObjectLocation : int32_t { Local, Remote, Nonexistent };
 
@@ -70,13 +73,21 @@ struct ObjectTableEntry {
   /// Offset from the base of the mmap.
   ptrdiff_t offset;
   /// Pointer to the object data. Needed to free the object.
-  uint8_t* pointer;
+  uint8_t *pointer;
   /// Size of the object in bytes.
   int64_t data_size;
   /// Size of the object metadata in bytes.
   int64_t metadata_size;
   /// Number of clients currently using this object.
   int ref_count;
+  /// Owner's raylet ID.
+  NodeID owner_raylet_id;
+  /// Owner's IP address.
+  std::string owner_ip_address;
+  /// Owner's port.
+  int owner_port;
+  /// Owner's worker ID.
+  WorkerID owner_worker_id;
   /// Unix epoch of when this object was created.
   int64_t create_time;
   /// How long creation of this object took.

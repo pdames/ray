@@ -70,17 +70,11 @@ enum MessageType:int {
   PushProfileEventsRequest,
   // Free the objects in objects store.
   FreeObjectsInObjectStoreRequest,
-  // Request raylet backend to prepare a checkpoint for an actor.
-  PrepareActorCheckpointRequest,
-  // Reply of `PrepareActorCheckpointRequest`.
-  PrepareActorCheckpointReply,
-  // Notify raylet backend that an actor was resumed from a checkpoint.
-  NotifyActorResumedFromCheckpoint,
   // A node manager requests to connect to another node manager.
   ConnectClient,
   // Set dynamic custom resource.
   SetResourceRequest,
-  // Subscribe to Plasma updates
+  // Subscribe to Plasma updates.
   SubscribePlasmaReady,
 }
 
@@ -126,8 +120,9 @@ table ResourceIdSetInfos {
 // This struct is used to register a new worker with the raylet.
 // It is shipped as part of raylet_connect.
 table RegisterClientRequest {
-  // True if the client is a worker and false if the client is a driver.
-  is_worker: bool;
+  // Type of the worker.
+  // TODO(suquark): Use `WorkerType` in `common.proto`.
+  worker_type: int;
   // The ID of the worker or driver.
   worker_id: string;
   // The process ID of this worker.
@@ -146,14 +141,18 @@ table RegisterClientRequest {
 }
 
 table RegisterClientReply {
-  // GCS ClientID of the local node manager.
+  // Whether the registration succeeded.
+  success: bool;
+  // The reason of registration failure.
+  failure_reason: string;
+  // GCS NodeID of the local node manager.
   raylet_id: string;
   // Port that this worker should listen on.
   port: int;
   // Keys for internal config options.
-  internal_config_keys: [string];
+  system_config_keys: [string];
   // Values for internal config options corresponding to keys above.
-  internal_config_values: [string];
+  system_config_values: [string];
 }
 
 table AnnounceWorkerPort {
@@ -257,23 +256,6 @@ table FreeObjectsRequest {
   object_ids: [string];
 }
 
-table PrepareActorCheckpointRequest {
-  // ID of the actor.
-  actor_id: string;
-}
-
-table PrepareActorCheckpointReply {
-  // ID of the checkpoint.
-  checkpoint_id: string;
-}
-
-table NotifyActorResumedFromCheckpoint {
-  // ID of the actor.
-  actor_id: string;
-  // ID of the checkpoint from which the actor was resumed.
-  checkpoint_id: string;
-}
-
 table ConnectClient {
   // ID of the connecting client.
   client_id: string;
@@ -284,11 +266,21 @@ table SetResourceRequest {
   resource_name: string;
   // Capacity of the resource to be set.
   capacity: double;
-  // Client ID where this resource will be set.
-  client_id: string;
+  // Node ID where this resource will be set.
+  node_id: string;
 }
 
 table SubscribePlasmaReady {
   // ObjectID to wait for
   object_id: string;
+  // The owner address for the ObjectID
+  owner_address: Address;
+}
+
+table ForceSpillObjectsRequest {
+  // List of object IDs to be spilled to external storage.
+  object_ids: [string];
+}
+
+table ForceSpillObjectsReply {
 }

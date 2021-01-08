@@ -63,7 +63,7 @@ class WorkerAddress {
       : ip_address(address.ip_address()),
         port(address.port()),
         worker_id(WorkerID::FromBinary(address.worker_id())),
-        raylet_id(ClientID::FromBinary(address.raylet_id())) {}
+        raylet_id(NodeID::FromBinary(address.raylet_id())) {}
   template <typename H>
   friend H AbslHashValue(H h, const WorkerAddress &w) {
     return H::combine(std::move(h), w.ip_address, w.port, w.worker_id, w.raylet_id);
@@ -90,7 +90,7 @@ class WorkerAddress {
   /// The unique id of the worker.
   const WorkerID worker_id;
   /// The unique id of the worker raylet.
-  const ClientID raylet_id;
+  const NodeID raylet_id;
 };
 
 typedef std::function<std::shared_ptr<CoreWorkerClientInterface>(const rpc::Address &)>
@@ -142,6 +142,18 @@ class CoreWorkerClientInterface {
       const WaitForObjectEvictionRequest &request,
       const ClientCallback<WaitForObjectEvictionReply> &callback) {}
 
+  virtual void AddObjectLocationOwner(
+      const AddObjectLocationOwnerRequest &request,
+      const ClientCallback<AddObjectLocationOwnerReply> &callback) {}
+
+  virtual void RemoveObjectLocationOwner(
+      const RemoveObjectLocationOwnerRequest &request,
+      const ClientCallback<RemoveObjectLocationOwnerReply> &callback) {}
+
+  virtual void GetObjectLocationsOwner(
+      const GetObjectLocationsOwnerRequest &request,
+      const ClientCallback<GetObjectLocationsOwnerReply> &callback) {}
+
   /// Tell this actor to exit immediately.
   virtual void KillActor(const KillActorRequest &request,
                          const ClientCallback<KillActorReply> &callback) {}
@@ -163,9 +175,23 @@ class CoreWorkerClientInterface {
                                  const ClientCallback<WaitForRefRemovedReply> &callback) {
   }
 
+  virtual void SpillObjects(const SpillObjectsRequest &request,
+                            const ClientCallback<SpillObjectsReply> &callback) {}
+
+  virtual void RestoreSpilledObjects(
+      const RestoreSpilledObjectsRequest &request,
+      const ClientCallback<RestoreSpilledObjectsReply> &callback) {}
+
+  virtual void DeleteSpilledObjects(
+      const DeleteSpilledObjectsRequest &request,
+      const ClientCallback<DeleteSpilledObjectsReply> &callback) {}
+
   virtual void PlasmaObjectReady(const PlasmaObjectReadyRequest &request,
                                  const ClientCallback<PlasmaObjectReadyReply> &callback) {
   }
+
+  virtual void Exit(const ExitRequest &request,
+                    const ClientCallback<ExitReply> &callback) {}
 
   virtual ~CoreWorkerClientInterface(){};
 };
@@ -204,13 +230,30 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
 
   VOID_RPC_CLIENT_METHOD(CoreWorkerService, WaitForObjectEviction, grpc_client_, override)
 
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService, AddObjectLocationOwner, grpc_client_,
+                         override)
+
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService, RemoveObjectLocationOwner, grpc_client_,
+                         override)
+
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService, GetObjectLocationsOwner, grpc_client_,
+                         override)
+
   VOID_RPC_CLIENT_METHOD(CoreWorkerService, GetCoreWorkerStats, grpc_client_, override)
 
   VOID_RPC_CLIENT_METHOD(CoreWorkerService, LocalGC, grpc_client_, override)
 
   VOID_RPC_CLIENT_METHOD(CoreWorkerService, WaitForRefRemoved, grpc_client_, override)
 
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService, SpillObjects, grpc_client_, override)
+
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService, RestoreSpilledObjects, grpc_client_, override)
+
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService, DeleteSpilledObjects, grpc_client_, override)
+
   VOID_RPC_CLIENT_METHOD(CoreWorkerService, PlasmaObjectReady, grpc_client_, override)
+
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService, Exit, grpc_client_, override)
 
   void PushActorTask(std::unique_ptr<PushTaskRequest> request, bool skip_queue,
                      const ClientCallback<PushTaskReply> &callback) override {

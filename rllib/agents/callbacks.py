@@ -1,12 +1,16 @@
-from typing import Dict
+from typing import Dict, Optional, TYPE_CHECKING
 
 from ray.rllib.env import BaseEnv
 from ray.rllib.policy import Policy
 from ray.rllib.policy.sample_batch import SampleBatch
-from ray.rllib.evaluation import MultiAgentEpisode, RolloutWorker
+from ray.rllib.evaluation import MultiAgentEpisode
 from ray.rllib.utils.annotations import PublicAPI
 from ray.rllib.utils.deprecation import deprecation_warning
-from ray.rllib.utils.types import AgentID, PolicyID
+from ray.rllib.utils.typing import AgentID, PolicyID
+from ray.util.debug import log_once
+
+if TYPE_CHECKING:
+    from ray.rllib.evaluation import RolloutWorker
 
 
 @PublicAPI
@@ -27,9 +31,14 @@ class DefaultCallbacks:
                 "a class extending rllib.agents.callbacks.DefaultCallbacks")
         self.legacy_callbacks = legacy_callbacks_dict or {}
 
-    def on_episode_start(self, worker: RolloutWorker, base_env: BaseEnv,
+    def on_episode_start(self,
+                         *,
+                         worker: "RolloutWorker",
+                         base_env: BaseEnv,
                          policies: Dict[PolicyID, Policy],
-                         episode: MultiAgentEpisode, **kwargs):
+                         episode: MultiAgentEpisode,
+                         env_index: Optional[int] = None,
+                         **kwargs) -> None:
         """Callback run on the rollout worker before each episode starts.
 
         Args:
@@ -42,8 +51,14 @@ class DefaultCallbacks:
                 state. You can use the `episode.user_data` dict to store
                 temporary data, and `episode.custom_metrics` to store custom
                 metrics for the episode.
+            env_index (EnvID): Obsoleted: The ID of the environment, which the
+                episode belongs to.
             kwargs: Forward compatibility placeholder.
         """
+
+        if env_index is not None:
+            if log_once("callbacks_env_index_deprecated"):
+                deprecation_warning("env_index", "episode.env_id", error=False)
 
         if self.legacy_callbacks.get("on_episode_start"):
             self.legacy_callbacks["on_episode_start"]({
@@ -52,8 +67,13 @@ class DefaultCallbacks:
                 "episode": episode,
             })
 
-    def on_episode_step(self, worker: RolloutWorker, base_env: BaseEnv,
-                        episode: MultiAgentEpisode, **kwargs):
+    def on_episode_step(self,
+                        *,
+                        worker: "RolloutWorker",
+                        base_env: BaseEnv,
+                        episode: MultiAgentEpisode,
+                        env_index: Optional[int] = None,
+                        **kwargs) -> None:
         """Runs on each episode step.
 
         Args:
@@ -64,8 +84,14 @@ class DefaultCallbacks:
                 state. You can use the `episode.user_data` dict to store
                 temporary data, and `episode.custom_metrics` to store custom
                 metrics for the episode.
+            env_index (EnvID): Obsoleted: The ID of the environment, which the
+                episode belongs to.
             kwargs: Forward compatibility placeholder.
         """
+
+        if env_index is not None:
+            if log_once("callbacks_env_index_deprecated"):
+                deprecation_warning("env_index", "episode.env_id", error=False)
 
         if self.legacy_callbacks.get("on_episode_step"):
             self.legacy_callbacks["on_episode_step"]({
@@ -73,9 +99,14 @@ class DefaultCallbacks:
                 "episode": episode
             })
 
-    def on_episode_end(self, worker: RolloutWorker, base_env: BaseEnv,
+    def on_episode_end(self,
+                       *,
+                       worker: "RolloutWorker",
+                       base_env: BaseEnv,
                        policies: Dict[PolicyID, Policy],
-                       episode: MultiAgentEpisode, **kwargs):
+                       episode: MultiAgentEpisode,
+                       env_index: Optional[int] = None,
+                       **kwargs) -> None:
         """Runs when an episode is done.
 
         Args:
@@ -88,8 +119,14 @@ class DefaultCallbacks:
                 state. You can use the `episode.user_data` dict to store
                 temporary data, and `episode.custom_metrics` to store custom
                 metrics for the episode.
+            env_index (EnvID): Obsoleted: The ID of the environment, which the
+                episode belongs to.
             kwargs: Forward compatibility placeholder.
         """
+
+        if env_index is not None:
+            if log_once("callbacks_env_index_deprecated"):
+                deprecation_warning("env_index", "episode.env_id", error=False)
 
         if self.legacy_callbacks.get("on_episode_end"):
             self.legacy_callbacks["on_episode_end"]({
@@ -99,10 +136,10 @@ class DefaultCallbacks:
             })
 
     def on_postprocess_trajectory(
-            self, worker: RolloutWorker, episode: MultiAgentEpisode,
+            self, *, worker: "RolloutWorker", episode: MultiAgentEpisode,
             agent_id: AgentID, policy_id: PolicyID,
             policies: Dict[PolicyID, Policy], postprocessed_batch: SampleBatch,
-            original_batches: Dict[AgentID, SampleBatch], **kwargs):
+            original_batches: Dict[AgentID, SampleBatch], **kwargs) -> None:
         """Called immediately after a policy's postprocess_fn is called.
 
         You can use this callback to do additional postprocessing for a policy,
@@ -133,9 +170,9 @@ class DefaultCallbacks:
                 "all_pre_batches": original_batches,
             })
 
-    def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch,
-                      **kwargs):
-        """Called at the end RolloutWorker.sample().
+    def on_sample_end(self, *, worker: "RolloutWorker", samples: SampleBatch,
+                      **kwargs) -> None:
+        """Called at the end of RolloutWorker.sample().
 
         Args:
             worker (RolloutWorker): Reference to the current rollout worker.
@@ -150,7 +187,23 @@ class DefaultCallbacks:
                 "samples": samples,
             })
 
-    def on_train_result(self, trainer, result: dict, **kwargs):
+    def on_learn_on_batch(self, *, policy: Policy, train_batch: SampleBatch,
+                          **kwargs) -> None:
+        """Called at the beginning of Policy.learn_on_batch().
+
+        Note: This is called before the Model's `preprocess_train_batch()`
+        is called.
+
+        Args:
+            policy (Policy): Reference to the current Policy object.
+            train_batch (SampleBatch): SampleBatch to be trained on. You can
+                mutate this object to modify the samples generated.
+            kwargs: Forward compatibility placeholder.
+        """
+
+        pass
+
+    def on_train_result(self, *, trainer, result: dict, **kwargs) -> None:
         """Called at the end of Trainable.train().
 
         Args:

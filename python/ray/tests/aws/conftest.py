@@ -1,6 +1,10 @@
 import pytest
 
+<<<<<<< HEAD
 from ray.autoscaler.aws.utils import resource_cache, client_cache
+=======
+from ray.autoscaler._private.aws.utils import resource_cache, client_cache
+>>>>>>> 1c5df7098699c0f5b1ff604f63db48e8db072a50
 
 from botocore.stub import Stubber
 

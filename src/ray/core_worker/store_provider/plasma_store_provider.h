@@ -37,8 +37,7 @@ class CoreWorkerPlasmaStoreProvider {
       const std::string &store_socket,
       const std::shared_ptr<raylet::RayletClient> raylet_client,
       const std::shared_ptr<ReferenceCounter> reference_counter,
-      std::function<Status()> check_signals, bool evict_if_full,
-      std::function<void()> on_store_full = nullptr,
+      std::function<Status()> check_signals, bool warmup,
       std::function<std::string()> get_current_call_site = nullptr);
 
   ~CoreWorkerPlasmaStoreProvider();
@@ -52,10 +51,12 @@ class CoreWorkerPlasmaStoreProvider {
   ///
   /// \param[in] object The object to create.
   /// \param[in] object_id The ID of the object.
+  /// \param[in] owner_address The address of the object's owner.
   /// \param[out] object_exists Optional. Returns whether an object with the
   /// same ID already exists. If this is true, then the Put does not write any
   /// object data.
-  Status Put(const RayObject &object, const ObjectID &object_id, bool *object_exists);
+  Status Put(const RayObject &object, const ObjectID &object_id,
+             const rpc::Address &owner_address, bool *object_exists);
 
   /// Create an object in plasma and return a mutable buffer to it. The buffer should be
   /// subsequently written to and then sealed using Seal().
@@ -63,9 +64,11 @@ class CoreWorkerPlasmaStoreProvider {
   /// \param[in] metadata The metadata of the object.
   /// \param[in] data_size The size of the object.
   /// \param[in] object_id The ID of the object.
+  /// \param[in] owner_address The address of the object's owner.
   /// \param[out] data The mutable object buffer in plasma that can be written to.
   Status Create(const std::shared_ptr<Buffer> &metadata, const size_t data_size,
-                const ObjectID &object_id, std::shared_ptr<Buffer> *data);
+                const ObjectID &object_id, const rpc::Address &owner_address,
+                std::shared_ptr<Buffer> *data);
 
   /// Seal an object buffer created with Create().
   ///
@@ -150,8 +153,6 @@ class CoreWorkerPlasmaStoreProvider {
   const std::shared_ptr<ReferenceCounter> reference_counter_;
   std::mutex store_client_mutex_;
   std::function<Status()> check_signals_;
-  const bool evict_if_full_;
-  std::function<void()> on_store_full_;
   std::function<std::string()> get_current_call_site_;
 
   // Active buffers tracker. This must be allocated as a separate structure since its

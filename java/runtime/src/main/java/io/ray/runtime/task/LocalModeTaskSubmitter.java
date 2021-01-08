@@ -8,6 +8,7 @@ import io.ray.api.BaseActorHandle;
 import io.ray.api.Ray;
 import io.ray.api.id.ActorId;
 import io.ray.api.id.ObjectId;
+import io.ray.api.id.PlacementGroupId;
 import io.ray.api.id.TaskId;
 import io.ray.api.id.UniqueId;
 import io.ray.api.options.ActorCreationOptions;
@@ -22,6 +23,7 @@ import io.ray.runtime.functionmanager.JavaFunctionDescriptor;
 import io.ray.runtime.generated.Common;
 import io.ray.runtime.generated.Common.ActorCreationTaskSpec;
 import io.ray.runtime.generated.Common.ActorTaskSpec;
+import io.ray.runtime.generated.Common.Address;
 import io.ray.runtime.generated.Common.Language;
 import io.ray.runtime.generated.Common.ObjectReference;
 import io.ray.runtime.generated.Common.TaskArg;
@@ -73,6 +75,8 @@ public class LocalModeTaskSubmitter implements TaskSubmitter {
   private final Map<String, ActorHandle> namedActors = new ConcurrentHashMap<>();
 
   private final Map<ActorId, TaskExecutor.ActorContext> actorContexts = new ConcurrentHashMap<>();
+
+  private final Map<PlacementGroupId, PlacementGroup> placementGroups = new ConcurrentHashMap<>();
 
   public LocalModeTaskSubmitter(RayRuntimeInternal runtime, TaskExecutor taskExecutor,
                                 LocalModeObjectStore objectStore) {
@@ -165,6 +169,15 @@ public class LocalModeTaskSubmitter implements TaskSubmitter {
   public BaseActorHandle createActor(
       FunctionDescriptor functionDescriptor, List<FunctionArg> args,
       ActorCreationOptions options) throws IllegalArgumentException {
+    if (options != null) {
+      if (options.group != null) {
+        PlacementGroupImpl group = (PlacementGroupImpl)options.group;
+        Preconditions.checkArgument(options.bundleIndex >= 0
+                && options.bundleIndex < group.getBundles().size(),
+            String.format("Bundle index %s is invalid", options.bundleIndex));
+      }
+    }
+
     ActorId actorId = ActorId.fromRandom();
     TaskSpec taskSpec = getTaskSpecBuilder(TaskType.ACTOR_CREATION_TASK, functionDescriptor, args)
         .setNumReturns(1)
@@ -213,9 +226,23 @@ public class LocalModeTaskSubmitter implements TaskSubmitter {
   }
 
   @Override
-  public PlacementGroup createPlacementGroup(List<Map<String, Double>> bundles,
+  public PlacementGroup createPlacementGroup(String name, List<Map<String, Double>> bundles,
       PlacementStrategy strategy) {
-    return new PlacementGroupImpl();
+    PlacementGroupImpl placementGroup = new PlacementGroupImpl.Builder()
+        .setId(PlacementGroupId.fromRandom()).setName(name)
+        .setBundles(bundles).setStrategy(strategy).build();
+    placementGroups.put(placementGroup.getId(), placementGroup);
+    return placementGroup;
+  }
+
+  @Override
+  public void removePlacementGroup(PlacementGroupId id) {
+    placementGroups.remove(id);
+  }
+
+  @Override
+  public boolean waitPlacementGroupReady(PlacementGroupId id, int timeoutMs) {
+    return true;
   }
 
   @Override
@@ -371,7 +398,8 @@ public class LocalModeTaskSubmitter implements TaskSubmitter {
       TaskArg arg = taskSpec.getArgs(i);
       if (arg.getObjectRef().getObjectId() != ByteString.EMPTY) {
         functionArgs.add(FunctionArg
-            .passByReference(new ObjectId(arg.getObjectRef().getObjectId().toByteArray())));
+            .passByReference(new ObjectId(arg.getObjectRef().getObjectId().toByteArray()),
+            Address.getDefaultInstance()));
       } else {
         functionArgs.add(FunctionArg.passByValue(
             new NativeRayObject(arg.getData().toByteArray(), arg.getMetadata().toByteArray())));

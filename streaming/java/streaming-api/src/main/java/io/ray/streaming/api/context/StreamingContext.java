@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
  * Encapsulate the context information of a streaming Job.
  */
 public class StreamingContext implements Serializable {
+
   private static final Logger LOG = LoggerFactory.getLogger(StreamingContext.class);
 
   private transient AtomicInteger idGenerator;
@@ -62,13 +63,12 @@ public class StreamingContext implements Serializable {
     jobGraph.printJobGraph();
     LOG.info("JobGraph digraph\n{}", jobGraph.generateDigraph());
 
-    if (Ray.internal() == null) {
+    if (!Ray.isInitialized()) {
       if (Config.MEMORY_CHANNEL.equalsIgnoreCase(jobConfig.get(Config.CHANNEL_TYPE))) {
-        Preconditions.checkArgument(!jobGraph.isCrossLanguageGraph());
-        ClusterStarter.startCluster(false, true);
+        ClusterStarter.startCluster(true);
         LOG.info("Created local cluster for job {}.", jobName);
       } else {
-        ClusterStarter.startCluster(jobGraph.isCrossLanguageGraph(), false);
+        ClusterStarter.startCluster(false);
         LOG.info("Created multi process cluster for job {}.", jobName);
       }
       Runtime.getRuntime().addShutdownHook(new Thread(StreamingContext.this::stop));
@@ -101,8 +101,8 @@ public class StreamingContext implements Serializable {
   }
 
   public void stop() {
-    if (Ray.internal() != null) {
-      ClusterStarter.stopCluster(jobGraph.isCrossLanguageGraph());
+    if (Ray.isInitialized()) {
+      ClusterStarter.stopCluster();
     }
   }
 }

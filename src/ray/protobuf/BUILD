@@ -56,7 +56,10 @@ python_grpc_compile(
 proto_library(
     name = "reporter_proto",
     srcs = ["reporter.proto"],
-    deps = [":common_proto"],
+    deps = [
+        ":common_proto",
+        "@io_opencensus_proto//opencensus/proto/metrics/v1:metrics_proto"
+    ],
 )
 
 cc_proto_library(
@@ -83,9 +86,15 @@ cc_proto_library(
     deps = [":gcs_service_proto"],
 )
 
+python_grpc_compile(
+    name = "gcs_service_py_proto",
+    deps = [":gcs_service_proto"],
+)
+
 proto_library(
     name = "object_manager_proto",
     srcs = ["object_manager.proto"],
+    deps = [":common_proto"],
 )
 
 cc_proto_library(
@@ -117,5 +126,44 @@ proto_library(
 cc_proto_library(
     name = "serialization_cc_proto",
     deps = ["serialization_proto"],
+)
+
+proto_library(
+    name = "event_proto",
+    srcs = ["event.proto"],
+)
+
+cc_proto_library(
+    name = "event_cc_proto",
+    deps = [":event_proto"],
+)
+
+# Agent manager gRPC lib.
+proto_library(
+    name = "agent_manager_proto",
+    srcs = ["agent_manager.proto"],
+    deps = [],
+)
+
+python_grpc_compile(
+    name = "agent_manager_py_proto",
+    deps = [":agent_manager_proto"],
+)
+
+cc_proto_library(
+    name = "agent_manager_cc_proto",
+    deps = [":agent_manager_proto"],
+)
+
+# Ray Client gRPC lib
+proto_library(
+    name = "ray_client_proto",
+    srcs = ["ray_client.proto"],
+    deps = [],
+)
+
+python_grpc_compile(
+    name = "ray_client_py_proto",
+    deps = [":ray_client_proto"]
 )
 

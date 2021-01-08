@@ -58,6 +58,8 @@ ray::rpc::ActorHandle CreateInnerActorHandleFromActorTableData(
   inner.set_actor_cursor(task_spec.ReturnId(0).Binary());
   inner.set_extension_data(
       actor_table_data.task_spec().actor_creation_task_spec().extension_data());
+  inner.set_max_task_retries(
+      actor_table_data.task_spec().actor_creation_task_spec().max_task_retries());
   return inner;
 }
 
@@ -86,7 +88,7 @@ void ActorHandle::SetActorTaskSpec(TaskSpecBuilder &builder, const ObjectID new_
   // Build actor task spec.
   const TaskID actor_creation_task_id = TaskID::ForActorCreationTask(GetActorID());
   const ObjectID actor_creation_dummy_object_id =
-      ObjectID::ForTaskReturn(actor_creation_task_id, /*index=*/1);
+      ObjectID::FromIndex(actor_creation_task_id, /*index=*/1);
   builder.SetActorTaskSpec(GetActorID(), actor_creation_dummy_object_id,
                            /*previous_actor_task_dummy_object_id=*/actor_cursor_,
                            task_counter_++);

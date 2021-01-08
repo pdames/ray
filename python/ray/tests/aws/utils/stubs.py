@@ -7,7 +7,11 @@ from ray.tests.aws.utils.constants import DEFAULT_INSTANCE_PROFILE, \
 from ray.tests.aws.utils.helpers import \
     get_cloudwatch_dashboard_config_file_path,\
     get_cloudwatch_alarm_config_file_path
+<<<<<<< HEAD
 from ray.autoscaler.aws.cloudwatch.cloudwatch_helper import \
+=======
+from ray.autoscaler._private.aws.cloudwatch.cloudwatch_helper import \
+>>>>>>> 1c5df7098699c0f5b1ff604f63db48e8db072a50
     CWA_CONFIG_SSM_PARAM_NAME_BASE
 
 from unittest import mock
@@ -19,7 +23,7 @@ def configure_iam_role_default(iam_client_stub):
     iam_client_stub.add_response(
         "get_instance_profile",
         expected_params={
-            "InstanceProfileName": ray.autoscaler.aws.config.
+            "InstanceProfileName": ray.autoscaler._private.aws.config.
             DEFAULT_RAY_INSTANCE_PROFILE
         },
         service_response={"InstanceProfile": DEFAULT_INSTANCE_PROFILE})

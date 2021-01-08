@@ -1,5 +1,4 @@
 import asyncio
-from urllib.parse import parse_qs
 import socket
 from typing import List
 
@@ -7,46 +6,40 @@ import uvicorn
 
 import ray
 from ray.exceptions import RayTaskError
-from ray import serve
+from ray.serve.constants import LongPollKey
 from ray.serve.context import TaskContext
-from ray.serve.metric import MetricClient
-from ray.serve.request_params import RequestMetadata
+from ray.util import metrics
+from ray.serve.utils import _get_logger, get_random_letters
 from ray.serve.http_util import Response
-from ray.serve.router import Router
+from ray.serve.long_poll import LongPollAsyncClient
+from ray.serve.router import Router, RequestMetadata
 
-# The maximum number of times to retry a request due to actor failure.
-# TODO(edoakes): this should probably be configurable.
-MAX_ACTOR_DEAD_RETRIES = 10
+logger = _get_logger()
 
 
 class HTTPProxy:
-    """
-    This class should be instantiated and ran by ASGI server.
+    """This class is meant to be instantiated and run by an ASGI HTTP server.
 
     >>> import uvicorn
     >>> uvicorn.run(HTTPProxy(kv_store_actor_handle, router_handle))
-    # blocks forever
     """
 
-    async def fetch_config_from_controller(self, name, instance_name=None):
-        assert ray.is_initialized()
-        controller = serve.api._get_controller()
+    def __init__(self, controller_name):
+        controller = ray.get_actor(controller_name)
+        self.router = Router(controller)
+        self.long_poll_client = LongPollAsyncClient(controller, {
+            LongPollKey.ROUTE_TABLE: self._update_route_table,
+        })
 
-        self.route_table = await controller.get_router_config.remote()
-
-        # The exporter is required to return results for /-/metrics endpoint.
-        [self.metric_exporter] = await controller.get_metric_exporter.remote()
-
-        self.metric_client = MetricClient(self.metric_exporter)
-        self.request_counter = self.metric_client.new_counter(
+        self.request_counter = metrics.Count(
             "num_http_requests",
-            description="The number of requests processed",
-            label_names=("route", ))
+            description="The number of HTTP requests processed",
+            tag_keys=("route", ))
 
-        self.router = Router()
-        await self.router.setup(name, instance_name)
+    async def setup(self):
+        await self.router.setup_in_async_loop()
 
-    def set_route_table(self, route_table):
+    async def _update_route_table(self, route_table):
         self.route_table = route_table
 
     async def receive_http_body(self, scope, receive, send):
@@ -61,32 +54,6 @@ class HTTPProxy:
 
         return b"".join(body_buffer)
 
-    def _parse_latency_slo(self, scope):
-        query_string = scope["query_string"].decode("ascii")
-        query_kwargs = parse_qs(query_string)
-
-        relative_slo_ms = query_kwargs.pop("relative_slo_ms", None)
-        absolute_slo_ms = query_kwargs.pop("absolute_slo_ms", None)
-        relative_slo_ms = self._validate_slo_ms(relative_slo_ms)
-        absolute_slo_ms = self._validate_slo_ms(absolute_slo_ms)
-        if relative_slo_ms is not None and absolute_slo_ms is not None:
-            raise ValueError("Both relative and absolute slo's"
-                             "cannot be specified.")
-        return relative_slo_ms, absolute_slo_ms
-
-    def _validate_slo_ms(self, request_slo_ms):
-        if request_slo_ms is None:
-            return None
-        if len(request_slo_ms) != 1:
-            raise ValueError(
-                "Multiple SLO specified, please specific only one.")
-        request_slo_ms = request_slo_ms[0]
-        request_slo_ms = float(request_slo_ms)
-        if request_slo_ms < 0:
-            raise ValueError("Request SLO must be positive, it is {}".format(
-                request_slo_ms))
-        return request_slo_ms
-
     def _make_error_sender(self, scope, receive, send):
         async def sender(error_message, status_code):
             response = Response(error_message, status_code=status_code)
@@ -98,17 +65,17 @@ class HTTPProxy:
         current_path = scope["path"]
         if current_path == "/-/routes":
             await Response(self.route_table).send(scope, receive, send)
-        elif current_path == "/-/metrics":
-            metric_info = await self.metric_exporter.inspect_metrics.remote()
-            await Response(metric_info).send(scope, receive, send)
         else:
             await Response(
                 "System path {} not found".format(current_path),
                 status_code=404).send(scope, receive, send)
 
     async def __call__(self, scope, receive, send):
-        # NOTE: This implements ASGI protocol specified in
-        #       https://asgi.readthedocs.io/en/latest/specs/index.html
+        """Implements the ASGI protocol.
+
+        See details at:
+            https://asgi.readthedocs.io/en/latest/specs/index.html.
+        """
 
         error_sender = self._make_error_sender(scope, receive, send)
 
@@ -117,7 +84,7 @@ class HTTPProxy:
         assert scope["type"] == "http"
         current_path = scope["path"]
 
-        self.request_counter.labels(route=current_path).add()
+        self.request_counter.record(1, tags={"route": current_path})
 
         if current_path.startswith("/-/"):
             await self._handle_system_request(scope, receive, send)
@@ -142,25 +109,19 @@ class HTTPProxy:
 
         http_body_bytes = await self.receive_http_body(scope, receive, send)
 
-        # get slo_ms before enqueuing the query
-        try:
-            relative_slo_ms, absolute_slo_ms = self._parse_latency_slo(scope)
-        except ValueError as e:
-            await error_sender(str(e), 400)
-            return
-
         headers = {k.decode(): v.decode() for k, v in scope["headers"]}
         request_metadata = RequestMetadata(
+            get_random_letters(10),  # Used for debugging.
             endpoint_name,
             TaskContext.Web,
-            relative_slo_ms=relative_slo_ms,
-            absolute_slo_ms=absolute_slo_ms,
+            http_method=scope["method"].upper(),
             call_method=headers.get("X-SERVE-CALL-METHOD".lower(), "__call__"),
             shard_key=headers.get("X-SERVE-SHARD-KEY".lower(), None),
         )
 
-        result = await self.router.enqueue_request(request_metadata, scope,
-                                                   http_body_bytes)
+        ref = await self.router.assign_request(request_metadata, scope,
+                                               http_body_bytes)
+        result = await ref
 
         if isinstance(result, RayTaskError):
             error_message = "Task Error. Traceback: {}.".format(result)
@@ -173,21 +134,19 @@ class HTTPProxy:
 class HTTPProxyActor:
     async def __init__(
             self,
-            name,
             host,
             port,
-            instance_name=None,
-            _http_middlewares: List["starlette.middleware.Middleware"] = []):
-        serve.init(name=instance_name)
-        self.app = HTTPProxy()
+            controller_name,
+            http_middlewares: List[
+                "starlette.middleware.Middleware"] = []):  # noqa: F821
         self.host = host
         self.port = port
 
-        self.app = HTTPProxy()
-        await self.app.fetch_config_from_controller(name, instance_name)
+        self.app = HTTPProxy(controller_name)
+        await self.app.setup()
 
         self.wrapped_app = self.app
-        for middleware in _http_middlewares:
+        for middleware in http_middlewares:
             self.wrapped_app = middleware.cls(self.wrapped_app,
                                               **middleware.options)
 
@@ -222,31 +181,3 @@ class HTTPProxyActor:
         # the main thread and uvicorn doesn't expose a way to configure it.
         server.install_signal_handlers = lambda: None
         await server.serve(sockets=[sock])
-
-    async def set_route_table(self, route_table):
-        self.app.set_route_table(route_table)
-
-    # ------ Proxy router logic ------ #
-    async def add_new_worker(self, backend_tag, replica_tag, worker_handle):
-        return await self.app.router.add_new_worker(backend_tag, replica_tag,
-                                                    worker_handle)
-
-    async def set_traffic(self, endpoint, traffic_policy):
-        return await self.app.router.set_traffic(endpoint, traffic_policy)
-
-    async def set_backend_config(self, backend, config):
-        return await self.app.router.set_backend_config(backend, config)
-
-    async def remove_backend(self, backend):
-        return await self.app.router.remove_backend(backend)
-
-    async def remove_endpoint(self, endpoint):
-        return await self.app.router.remove_endpoint(endpoint)
-
-    async def remove_worker(self, backend_tag, replica_tag):
-        return await self.app.router.remove_worker(backend_tag, replica_tag)
-
-    async def enqueue_request(self, request_meta, *request_args,
-                              **request_kwargs):
-        return await self.app.router.enqueue_request(
-            request_meta, *request_args, **request_kwargs)

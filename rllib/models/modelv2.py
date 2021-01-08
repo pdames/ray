@@ -13,7 +13,7 @@ from ray.rllib.utils.annotations import DeveloperAPI, PublicAPI
 from ray.rllib.utils.framework import try_import_tf, try_import_torch, \
     TensorType
 from ray.rllib.utils.spaces.repeated import Repeated
-from ray.rllib.utils.types import ModelConfigDict, TensorStructType
+from ray.rllib.utils.typing import ModelConfigDict, TensorStructType
 
 tf1, tf, tfv = try_import_tf()
 torch, _ = try_import_torch()
@@ -58,7 +58,14 @@ class ModelV2:
         self.name: str = name or "default_model"
         self.framework: str = framework
         self._last_output = None
+        self.time_major = self.model_config.get("_time_major")
+        # Basic view requirement for all models: Use the observation as input.
+        self.inference_view_requirements = {
+            SampleBatch.OBS: ViewRequirement(shift=0, space=self.obs_space),
+        }
 
+    # TODO: (sven): Get rid of `get_initial_state` once Trajectory
+    #  View API is supported across all of RLlib.
     @PublicAPI
     def get_initial_state(self) -> List[np.ndarray]:
         """Get the initial recurrent state values for the model.
@@ -138,7 +145,7 @@ class ModelV2:
 
         You can find an runnable example in examples/custom_loss.py.
 
-        Arguments:
+        Args:
             policy_loss (Union[List[Tensor],Tensor]): List of or single policy
                 loss(es) from the policy.
             loss_inputs (dict): map of input placeholders for rollout data.
@@ -177,7 +184,7 @@ class ModelV2:
 
         Custom models should override forward() instead of __call__.
 
-        Arguments:
+        Args:
             input_dict (dict): dictionary of input tensors, including "obs",
                 "prev_action", "prev_reward", "is_training"
             state (list): list of state tensors with sizes matching those
@@ -231,40 +238,15 @@ class ModelV2:
         right input dict, state, and seq len arguments.
         """
 
-        input_dict = {
-            "obs": train_batch[SampleBatch.CUR_OBS],
-            "is_training": is_training,
-        }
-        if SampleBatch.PREV_ACTIONS in train_batch:
-            input_dict["prev_actions"] = train_batch[SampleBatch.PREV_ACTIONS]
-        if SampleBatch.PREV_REWARDS in train_batch:
-            input_dict["prev_rewards"] = train_batch[SampleBatch.PREV_REWARDS]
+        train_batch["is_training"] = is_training
         states = []
         i = 0
         while "state_in_{}".format(i) in train_batch:
             states.append(train_batch["state_in_{}".format(i)])
             i += 1
-        return self.__call__(input_dict, states, train_batch.get("seq_lens"))
-
-    def inference_view_requirements(self) -> Dict[str, ViewRequirement]:
-        """Returns a dict of ViewRequirements for this Model.
-
-        Note: This is an experimental API method.
-
-        The view requirements dict is used to generate input_dicts and
-        train batches for 1) action computations, 2) postprocessing, and 3)
-        generating training batches.
-
-        Returns:
-            Dict[str, ViewRequirement]: The view requirements dict, mapping
-                each view key (which will be available in input_dicts) to
-                an underlying requirement (actual data, timestep shift, etc..).
-        """
-        # Default implementation for simple RL model:
-        # Single requirement: Pass current obs as input.
-        return {
-            SampleBatch.OBS: ViewRequirement(shift=0),
-        }
+        ret = self.__call__(train_batch, states, train_batch.get("seq_lens"))
+        del train_batch["is_training"]
+        return ret
 
     def import_from_h5(self, h5_file: str) -> None:
         """Imports weights from an h5 file.
@@ -321,6 +303,39 @@ class ModelV2:
                 of this ModelV2.
         """
         raise NotImplementedError
+
+    @PublicAPI
+    def is_time_major(self) -> bool:
+        """If True, data for calling this ModelV2 must be in time-major format.
+
+        Returns
+            bool: Whether this ModelV2 requires a time-major (TxBx...) data
+                format.
+        """
+        return self.time_major is True
+
+    # TODO: (sven) Experimental method.
+    def get_input_dict(self, sample_batch,
+                       index: int = -1) -> Dict[str, TensorType]:
+        if index < 0:
+            index = sample_batch.count - 1
+
+        input_dict = {}
+        for view_col, view_req in self.inference_view_requirements.items():
+            # Create batches of size 1 (single-agent input-dict).
+
+            # Index range.
+            if isinstance(index, tuple):
+                data = sample_batch[view_col][index[0]:index[1] + 1]
+                input_dict[view_col] = np.array([data])
+            # Single index.
+            else:
+                input_dict[view_col] = sample_batch[view_col][index:index + 1]
+
+        # Add valid `seq_lens`, just in case RNNs need it.
+        input_dict["seq_lens"] = np.array([1], dtype=np.int32)
+
+        return input_dict
 
 
 class NullContextManager:
@@ -414,7 +429,9 @@ def _unpack_obs(obs: TensorType, space: gym.Space,
                     prep.shape[0], obs.shape))
         offset = 0
         if tensorlib == tf:
-            batch_dims = [v.value for v in obs.shape[:-1]]
+            batch_dims = [
+                v if isinstance(v, int) else v.value for v in obs.shape[:-1]
+            ]
             batch_dims = [-1 if v is None else v for v in batch_dims]
         else:
             batch_dims = list(obs.shape[:-1])

@@ -1,6 +1,5 @@
 package io.ray.streaming.jobgraph;
 
-import io.ray.streaming.api.Language;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,8 +29,9 @@ public class JobGraph implements Serializable {
     this.jobEdges = new ArrayList<>();
   }
 
-  public JobGraph(String jobName, Map<String, String> jobConfig,
-                  List<JobVertex> jobVertices, List<JobEdge> jobEdges) {
+  public JobGraph(
+      String jobName, Map<String, String> jobConfig,
+      List<JobVertex> jobVertices, List<JobEdge> jobEdges) {
     this.jobName = jobName;
     this.jobConfig = jobConfig;
     this.jobVertices = jobVertices;
@@ -40,8 +40,8 @@ public class JobGraph implements Serializable {
   }
 
   /**
-   * Generate direct-graph(made up of a set of vertices and connected by edges)
-   * by current job graph for simple log printing.
+   * Generate direct-graph(made up of a set of vertices and connected by edges) by current job graph
+   * for simple log printing.
    *
    * @return Digraph in string type.
    */
@@ -135,16 +135,6 @@ public class JobGraph implements Serializable {
     for (JobEdge jobEdge : jobEdges) {
       LOG.info(jobEdge.toString());
     }
-  }
-
-  public boolean isCrossLanguageGraph() {
-    Language language = jobVertices.get(0).getLanguage();
-    for (JobVertex jobVertex : jobVertices) {
-      if (jobVertex.getLanguage() != language) {
-        return true;
-      }
-    }
-    return false;
   }
 
 }

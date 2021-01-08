@@ -50,7 +50,8 @@ cdef class Metric:
         # Default tags will be exported if it's empty map.
         if tags:
             for tag_k, tag_v in tags.items():
-                c_tags[tag_k.encode("ascii")] = tag_v.encode("ascii")
+                if tag_v is not None:
+                    c_tags[tag_k.encode("ascii")] = tag_v.encode("ascii")
         c_value = value
         with nogil:
             self.metric.get().Record(c_value, c_tags)
@@ -74,7 +75,6 @@ cdef class Gauge(Metric):
             value = 5
             key1= "key1"
             key2 = "key2"
-s
             gauge.record(value, {"tagk1": key1, "tagk2": key2})
     """
     def __init__(self, name, description, unit, tag_keys):

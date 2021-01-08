@@ -1,11 +1,14 @@
 import numpy as np
+from typing import Dict, List
+import gym
 
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.torch.misc import normc_initializer, same_padding, \
     SlimConv2d, SlimFC
-from ray.rllib.models.tf.visionnet_v1 import _get_filter_config
+from ray.rllib.models.utils import get_filter_config
 from ray.rllib.utils.annotations import override
-from ray.rllib.utils.framework import get_activation_fn, try_import_torch
+from ray.rllib.utils.framework import try_import_torch
+from ray.rllib.utils.typing import ModelConfigDict, TensorType
 
 _, nn = try_import_torch()
 
@@ -13,18 +16,19 @@ _, nn = try_import_torch()
 class VisionNetwork(TorchModelV2, nn.Module):
     """Generic vision network."""
 
-    def __init__(self, obs_space, action_space, num_outputs, model_config,
-                 name):
+    def __init__(self, obs_space: gym.spaces.Space,
+                 action_space: gym.spaces.Space, num_outputs: int,
+                 model_config: ModelConfigDict, name: str):
         if not model_config.get("conv_filters"):
-            model_config["conv_filters"] = _get_filter_config(obs_space.shape)
-
+            model_config["conv_filters"] = get_filter_config(obs_space.shape)
         TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
                               model_config, name)
         nn.Module.__init__(self)
 
-        activation = get_activation_fn(
-            self.model_config.get("conv_activation"), framework="torch")
+        activation = self.model_config.get("conv_activation")
         filters = self.model_config["conv_filters"]
+        assert len(filters) > 0,\
+            "Must provide at least 1 entry in `conv_filters`!"
         no_final_linear = self.model_config.get("no_final_linear")
         vf_share_layers = self.model_config.get("vf_share_layers")
 
@@ -101,7 +105,10 @@ class VisionNetwork(TorchModelV2, nn.Module):
         self._value_branch_separate = self._value_branch = None
         if vf_share_layers:
             self._value_branch = SlimFC(
-                out_channels, 1, initializer=normc_initializer(0.01))
+                out_channels,
+                1,
+                initializer=normc_initializer(0.01),
+                activation_fn=None)
         else:
             vf_layers = []
             (w, h, in_channels) = obs_space.shape
@@ -136,14 +143,17 @@ class VisionNetwork(TorchModelV2, nn.Module):
                     out_channels=1,
                     kernel=1,
                     stride=1,
-                    padding=None))
+                    padding=None,
+                    activation_fn=None))
             self._value_branch_separate = nn.Sequential(*vf_layers)
 
         # Holds the current "base" output (before logits layer).
         self._features = None
 
     @override(TorchModelV2)
-    def forward(self, input_dict, state, seq_lens):
+    def forward(self, input_dict: Dict[str, TensorType],
+                state: List[TensorType],
+                seq_lens: TensorType) -> (TensorType, List[TensorType]):
         self._features = input_dict["obs"].float().permute(0, 3, 1, 2)
         conv_out = self._convs(self._features)
         # Store features to save forward pass when getting value_function out.
@@ -168,7 +178,7 @@ class VisionNetwork(TorchModelV2, nn.Module):
             return conv_out, state
 
     @override(TorchModelV2)
-    def value_function(self):
+    def value_function(self) -> TensorType:
         assert self._features is not None, "must call forward() first"
         if self._value_branch_separate:
             value = self._value_branch_separate(self._features)
@@ -183,7 +193,7 @@ class VisionNetwork(TorchModelV2, nn.Module):
                 features = self._features
             return self._value_branch(features).squeeze(1)
 
-    def _hidden_layers(self, obs):
+    def _hidden_layers(self, obs: TensorType) -> TensorType:
         res = self._convs(obs.permute(0, 3, 1, 2))  # switch to channel-major
         res = res.squeeze(3)
         res = res.squeeze(2)

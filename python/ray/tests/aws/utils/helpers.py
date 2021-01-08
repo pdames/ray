@@ -2,12 +2,18 @@ import yaml
 import ray
 import os
 
-from ray.autoscaler.commands import prepare_config, validate_config
+from ray.autoscaler._private.commands import prepare_config, validate_config
 from ray.tests.aws.utils.constants import DEFAULT_CLUSTER_NAME
+<<<<<<< HEAD
 from ray.autoscaler.aws.cloudwatch.cloudwatch_helper import CloudwatchHelper
+=======
+from ray.autoscaler._private.aws.cloudwatch.cloudwatch_helper import \
+    CloudwatchHelper
+>>>>>>> 1c5df7098699c0f5b1ff604f63db48e8db072a50
 
 
 def get_aws_example_config_file_path(file_name):
+    import ray.autoscaler.aws
     return os.path.join(
         os.path.dirname(ray.autoscaler.aws.__file__), file_name)
 
@@ -21,7 +27,7 @@ def bootstrap_aws_config(config):
     config = prepare_config(config)
     validate_config(config)
     config["cluster_name"] = DEFAULT_CLUSTER_NAME
-    return ray.autoscaler.aws.config.bootstrap_aws(config)
+    return ray.autoscaler._private.aws.config.bootstrap_aws(config)
 
 
 def bootstrap_aws_example_config_file(file_name):
