@@ -6,8 +6,8 @@ from ray.data.datasource.csv_datasource import CSVDatasource
 from ray.data.datasource.numpy_datasource import NumpyDatasource
 from ray.data.datasource.parquet_datasource import (ParquetDatasource)
 from ray.data.datasource.binary_datasource import BinaryDatasource
-from ray.data.datasource.file_based_datasource import (FileBasedDatasource,
-                                                       _S3FileSystemWrapper)
+from ray.data.datasource.file_based_datasource import (
+    FileBasedDatasource, _S3FileSystemWrapper, BlockWritePathProvider)
 
 __all__ = [
     "JSONDatasource",
@@ -22,4 +22,5 @@ __all__ = [
     "RandomIntRowDatasource",
     "DummyOutputDatasource",
     "ReadTask",
+    "BlockWritePathProvider",
 ]

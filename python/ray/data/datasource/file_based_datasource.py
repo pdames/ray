@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import Callable, Optional, List, Tuple, Union, Any, Dict, \
     TYPE_CHECKING
 import urllib.parse
@@ -114,16 +113,18 @@ class FileBasedDatasource(Datasource[Union[ArrowRow, Any]]):
         raise NotImplementedError(
             "Subclasses of FileBasedDatasource must implement _read_files().")
 
-    def do_write(self,
-                 blocks: List[ObjectRef[Block]],
-                 metadata: List[BlockMetadata],
-                 path: str,
-                 dataset_uuid: str,
-                 filesystem: Optional["pyarrow.fs.FileSystem"] = None,
-                 try_create_dir: bool = True,
-                 open_stream_args: Optional[Dict[str, Any]] = None,
-                 _block_udf: Optional[Callable[[Block], Block]] = None,
-                 **write_args) -> List[ObjectRef[WriteResult]]:
+    def do_write(
+            self,
+            blocks: List[ObjectRef[Block]],
+            metadata: List[BlockMetadata],
+            path: str,
+            dataset_uuid: str,
+            filesystem: Optional["pyarrow.fs.FileSystem"] = None,
+            try_create_dir: bool = True,
+            open_stream_args: Optional[Dict[str, Any]] = None,
+            block_path_provider: Optional["BlockWritePathProvider"] = None,
+            _block_udf: Optional[Callable[[Block], Block]] = None,
+            **write_args) -> List[ObjectRef[WriteResult]]:
         """Creates and returns write tasks for a file-based datasource."""
         path, filesystem = _resolve_paths_and_filesystem(path, filesystem)
         path = path[0]
@@ -152,9 +153,16 @@ class FileBasedDatasource(Datasource[Union[ArrowRow, Any]]):
 
         file_format = self._file_format()
         write_tasks = []
+        if not block_path_provider:
+            block_path_provider = DefaultBlockWritePathProvider()
         for block_idx, block in enumerate(blocks):
-            write_path = os.path.join(
-                path, f"{dataset_uuid}_{block_idx:06}.{file_format}")
+            write_path = block_path_provider(
+                path,
+                filesystem=filesystem,
+                dataset_uuid=dataset_uuid,
+                block=block,
+                block_index=block_idx,
+                file_format=file_format)
             write_task = write_block.remote(write_path, block)
             write_tasks.append(write_task)
 
@@ -373,3 +381,81 @@ class _S3FileSystemWrapper:
 
     def __reduce__(self):
         return _S3FileSystemWrapper._reconstruct, self._fs.__reduce__()
+
+
+@DeveloperAPI
+class BlockWritePathProvider:
+    """Abstract callable that provides concrete output paths when writing
+    dataset blocks.
+
+    Current subclasses:
+        DefaultBlockWritePathProvider
+    """
+
+    def _get_write_path_for_block(
+            self,
+            base_path: str,
+            *,
+            filesystem: Optional["pyarrow.fs.FileSystem"] = None,
+            dataset_uuid: Optional[str] = None,
+            block: Optional[BlockAccessor] = None,
+            block_index: Optional[int] = None,
+            file_format: Optional[str] = None) -> str:
+        """
+        Resolves and returns the write path for the given dataset block. When
+        implementing this method, care should be taken to ensure that a unique
+        path is provided for every dataset block.
+
+        Args:
+            base_path: The base path to write the dataset block out to. This is
+            expected to be the same for all blocks in the dataset, and may
+            point to either a directory or file prefix.
+            filesystem: The filesystem implementation that will be used to write
+            a file out to the write path returned.
+            dataset_uuid: Unique identifier for the dataset that this block
+            belongs to.
+            block: Accessor for the block to write.
+            block_index: Ordered index of the block to write within its parent
+            dataset.
+            file_format: File format string for the block that can be used as
+            the file extension in the write path returned.
+        """
+        raise NotImplementedError
+
+    def __call__(self,
+                 base_path: str,
+                 *,
+                 filesystem: Optional["pyarrow.fs.FileSystem"] = None,
+                 dataset_uuid: Optional[str] = None,
+                 block: Optional[BlockAccessor] = None,
+                 block_index: Optional[int] = None,
+                 file_format: Optional[str] = None) -> str:
+        return self._get_write_path_for_block(
+            base_path,
+            filesystem=filesystem,
+            dataset_uuid=dataset_uuid,
+            block=block,
+            block_index=block_index,
+            file_format=file_format)
+
+
+class DefaultBlockWritePathProvider(BlockWritePathProvider):
+    """Default block write path provider implementation that writes each
+    dataset block out to a file of the form:
+    {base_path}/{dataset_uuid}_{block_index}.{file_format}
+    """
+
+    def _get_write_path_for_block(
+            self,
+            base_path: str,
+            *,
+            filesystem: Optional["pyarrow.fs.FileSystem"] = None,
+            dataset_uuid: Optional[str] = None,
+            block: Optional[BlockAccessor] = None,
+            block_index: Optional[int] = None,
+            file_format: Optional[str] = None) -> str:
+        suffix = f"{dataset_uuid}_{block_index:06}.{file_format}"
+        # Use forward slashes for cross-filesystem compatibility, since PyArrow
+        # FileSystem paths are always forward slash separated, see:
+        # https://arrow.apache.org/docs/python/filesystems.html
+        return f"{base_path}/{suffix}"
