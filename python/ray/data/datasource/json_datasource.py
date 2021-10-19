@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Callable
 
 if TYPE_CHECKING:
     import pyarrow
@@ -23,8 +23,13 @@ class JSONDatasource(FileBasedDatasource):
             "read_options", json.ReadOptions(use_threads=False))
         return json.read_json(f, read_options=read_options, **reader_args)
 
-    def _write_block(self, f: "pyarrow.NativeFile", block: BlockAccessor,
-                     **writer_args):
+    def _write_block(
+            self,
+            f: "pyarrow.NativeFile",
+            block: BlockAccessor,
+            write_args_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+            **writer_args):
+        writer_args = _resolve_kwargs(write_args_provider, writer_args)
         orient = writer_args.pop("orient", "records")
         lines = writer_args.pop("lines", True)
         block.to_pandas().to_json(f, orient=orient, lines=lines, **writer_args)

@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Optional, List, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, Optional, List, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pyarrow
@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 from ray.data.block import Block, BlockAccessor
 from ray.data.datasource.datasource import ReadTask
 from ray.data.datasource.file_based_datasource import (
-    FileBasedDatasource, _resolve_paths_and_filesystem)
+    FileBasedDatasource, _resolve_paths_and_filesystem, _resolve_kwargs)
 from ray.data.impl.block_list import BlockMetadata
 from ray.data.impl.util import _check_pyarrow_version
 
@@ -130,10 +130,15 @@ class ParquetDatasource(FileBasedDatasource):
 
         return read_tasks
 
-    def _write_block(self, f: "pyarrow.NativeFile", block: BlockAccessor,
-                     **writer_args):
+    def _write_block(
+            self,
+            f: "pyarrow.NativeFile",
+            block: BlockAccessor,
+            write_args_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+            **writer_args):
         import pyarrow.parquet as pq
 
+        writer_args = _resolve_kwargs(write_args_provider, **writer_args)
         pq.write_table(block.to_arrow(), f, **writer_args)
 
     def _file_format(self):

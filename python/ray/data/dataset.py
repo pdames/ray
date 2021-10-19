@@ -976,6 +976,7 @@ class Dataset(Generic[T]):
             try_create_dir: bool = True,
             arrow_open_stream_args: Optional[Dict[str, Any]] = None,
             block_path_provider: Optional[BlockWritePathProvider] = None,
+            write_args_provider: Optional[Callable[[], Dict[str, Any]]] = None,
             **arrow_parquet_args) -> None:
         """Write the dataset to parquet.
 
@@ -1001,6 +1002,9 @@ class Dataset(Generic[T]):
                 pyarrow.fs.FileSystem.open_output_stream
             block_path_provider: BlockWritePathProvider implementation to
                 write each dataset block to a custom output path.
+            write_args_provider: Callable that returns a dictionary of write
+                arguments to use when writing each block to a file. Overrides
+                any duplicate keys from arrow_parquet_args.
             arrow_parquet_args: Options to pass to
                 pyarrow.parquet.write_table(), which is used to write out each
                 block to a file.
@@ -1013,6 +1017,7 @@ class Dataset(Generic[T]):
             try_create_dir=try_create_dir,
             open_stream_args=arrow_open_stream_args,
             block_path_provider=block_path_provider,
+            write_args_provider=write_args_provider,
             **arrow_parquet_args)
 
     def write_json(
@@ -1023,6 +1028,7 @@ class Dataset(Generic[T]):
             try_create_dir: bool = True,
             arrow_open_stream_args: Optional[Dict[str, Any]] = None,
             block_path_provider: Optional[BlockWritePathProvider] = None,
+            write_args_provider: Optional[Callable[[], Dict[str, Any]]] = None,
             **pandas_json_args) -> None:
         """Write the dataset to json.
 
@@ -1048,6 +1054,9 @@ class Dataset(Generic[T]):
                 pyarrow.fs.FileSystem.open_output_stream
             block_path_provider: BlockWritePathProvider implementation to
                 write each dataset block to a custom output path.
+            write_args_provider: Callable that returns a dictionary of write
+                arguments to use when writing each block to a file. Overrides
+                any duplicate keys from pandas_json_args.
             pandas_json_args: These args will be passed to
                 pandas.DataFrame.to_json(), which we use under the hood to
                 write out each Datasets block. These
@@ -1061,16 +1070,19 @@ class Dataset(Generic[T]):
             try_create_dir=try_create_dir,
             open_stream_args=arrow_open_stream_args,
             block_path_provider=block_path_provider,
+            write_args_provider=write_args_provider,
             **pandas_json_args)
 
-    def write_csv(self,
-                  path: str,
-                  *,
-                  filesystem: Optional["pyarrow.fs.FileSystem"] = None,
-                  try_create_dir: bool = True,
-                  arrow_open_stream_args: Optional[Dict[str, Any]] = None,
-                  block_path_provider: Optional[BlockWritePathProvider] = None,
-                  **arrow_csv_args) -> None:
+    def write_csv(
+            self,
+            path: str,
+            *,
+            filesystem: Optional["pyarrow.fs.FileSystem"] = None,
+            try_create_dir: bool = True,
+            arrow_open_stream_args: Optional[Dict[str, Any]] = None,
+            block_path_provider: Optional[BlockWritePathProvider] = None,
+            write_args_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+            **arrow_csv_args) -> None:
         """Write the dataset to csv.
 
         This is only supported for datasets convertible to Arrow records.
@@ -1095,6 +1107,9 @@ class Dataset(Generic[T]):
                 pyarrow.fs.FileSystem.open_output_stream
             block_path_provider: BlockWritePathProvider implementation to
                 write each dataset block to a custom output path.
+            write_args_provider: Callable that returns a dictionary of write
+                arguments to use when writing each block to a file. Overrides
+                any duplicate keys from arrow_csv_args.
             arrow_csv_args: Other CSV write options to pass to pyarrow.
         """
         self.write_datasource(
@@ -1105,6 +1120,7 @@ class Dataset(Generic[T]):
             try_create_dir=try_create_dir,
             open_stream_args=arrow_open_stream_args,
             block_path_provider=block_path_provider,
+            write_args_provider=write_args_provider,
             **arrow_csv_args)
 
     def write_numpy(

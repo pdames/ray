@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Callable
 
 import numpy as np
 
@@ -7,7 +7,8 @@ if TYPE_CHECKING:
     import pyarrow
 
 from ray.data.block import BlockAccessor
-from ray.data.datasource.file_based_datasource import FileBasedDatasource
+from ray.data.datasource.file_based_datasource import (FileBasedDatasource,
+                                                       _resolve_kwargs)
 
 
 class NumpyDatasource(FileBasedDatasource):
@@ -33,8 +34,13 @@ class NumpyDatasource(FileBasedDatasource):
             "value": TensorArray(np.load(buf, allow_pickle=True))
         })
 
-    def _write_block(self, f: "pyarrow.NativeFile", block: BlockAccessor,
-                     column: str, **writer_args):
+    def _write_block(
+            self,
+            f: "pyarrow.NativeFile",
+            block: BlockAccessor,
+            column: str,
+            write_args_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+            **writer_args):
         value = block.to_numpy(column)
         np.save(f, value)
 
