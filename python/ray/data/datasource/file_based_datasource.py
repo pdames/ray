@@ -38,6 +38,7 @@ class FileBasedDatasource(Datasource[Union[ArrowRow, Any]]):
             filesystem: Optional["pyarrow.fs.FileSystem"] = None,
             schema: Optional[Union[type, "pyarrow.lib.Schema"]] = None,
             open_stream_args: Optional[Dict[str, Any]] = None,
+            reader_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
             _block_udf: Optional[Callable[[Block], Block]] = None,
             **reader_args) -> List[ReadTask]:
         """Creates and returns read tasks for a file-based datasource.
@@ -66,7 +67,8 @@ class FileBasedDatasource(Datasource[Union[ArrowRow, Any]]):
             builder = DelegatingArrowBlockBuilder()
             for read_path in read_paths:
                 with fs.open_input_stream(read_path, **open_stream_args) as f:
-                    data = read_file(f, read_path, **reader_args)
+                    data = read_file(f, read_path, reader_args_fn,
+                                     **reader_args)
                     if isinstance(data, pa.Table) or isinstance(
                             data, np.ndarray):
                         builder.add_block(data)
@@ -106,7 +108,11 @@ class FileBasedDatasource(Datasource[Union[ArrowRow, Any]]):
         """
         return None
 
-    def _read_file(self, f: "pyarrow.NativeFile", path: str, **reader_args):
+    def _read_file(self,
+                   f: "pyarrow.NativeFile",
+                   path: str,
+                   reader_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
+                   **reader_args):
         """Reads a single file, passing all kwargs to the reader.
 
         This method should be implemented by subclasses.
@@ -373,3 +379,12 @@ class _S3FileSystemWrapper:
 
     def __reduce__(self):
         return _S3FileSystemWrapper._reconstruct, self._fs.__reduce__()
+
+
+def _resolve_kwargs(kwargs_fn: Callable[[], Dict[str, Any]],
+                    **kwargs) -> Dict[str, Any]:
+
+    if kwargs_fn:
+        kwarg_overrides = kwargs_fn()
+        kwargs.update(kwarg_overrides)
+    return kwargs

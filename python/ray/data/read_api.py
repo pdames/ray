@@ -206,15 +206,17 @@ def read_datasource(datasource: Datasource[T],
 
 
 @PublicAPI(stability="beta")
-def read_parquet(paths: Union[str, List[str]],
-                 *,
-                 filesystem: Optional["pyarrow.fs.FileSystem"] = None,
-                 columns: Optional[List[str]] = None,
-                 parallelism: int = 200,
-                 ray_remote_args: Dict[str, Any] = None,
-                 _tensor_column_schema: Optional[Dict[str, Tuple[
-                     np.dtype, Tuple[int, ...]]]] = None,
-                 **arrow_parquet_args) -> Dataset[ArrowRow]:
+def read_parquet(
+        paths: Union[str, List[str]],
+        *,
+        filesystem: Optional["pyarrow.fs.FileSystem"] = None,
+        columns: Optional[List[str]] = None,
+        parallelism: int = 200,
+        ray_remote_args: Dict[str, Any] = None,
+        _tensor_column_schema: Optional[Dict[str, Tuple[np.dtype, Tuple[
+            int, ...]]]] = None,
+        arrow_parquet_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
+        **arrow_parquet_args) -> Dataset[ArrowRow]:
     """Create an Arrow dataset from parquet files.
 
     Examples:
@@ -236,6 +238,9 @@ def read_parquet(paths: Union[str, List[str]],
             type. This assumes that the tensors were serialized in the raw
             NumPy array format in C-contiguous order (e.g. via
             `arr.tobytes()`).
+        arrow_parquet_args_fn: Callable that returns a dictionary of read
+            arguments to use when reading each file to a block. Overrides any
+            duplicate keys from arrow_parquet_args.
         arrow_parquet_args: Other parquet read options to pass to pyarrow.
 
     Returns:
@@ -274,6 +279,7 @@ def read_parquet(paths: Union[str, List[str]],
         filesystem=filesystem,
         columns=columns,
         ray_remote_args=ray_remote_args,
+        reader_args_fn=arrow_parquet_args_fn,
         **arrow_parquet_args)
 
 
@@ -284,6 +290,7 @@ def read_json(paths: Union[str, List[str]],
               parallelism: int = 200,
               ray_remote_args: Dict[str, Any] = None,
               arrow_open_stream_args: Optional[Dict[str, Any]] = None,
+              arrow_json_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
               **arrow_json_args) -> Dataset[ArrowRow]:
     """Create an Arrow dataset from json files.
 
@@ -305,6 +312,9 @@ def read_json(paths: Union[str, List[str]],
         ray_remote_args: kwargs passed to ray.remote in the read tasks.
         arrow_open_stream_args: kwargs passed to
             pyarrow.fs.FileSystem.open_input_stream
+        arrow_json_args_fn: Callable that returns a dictionary of read
+            arguments to use when reading each file to a block. Overrides any
+            duplicate keys from arrow_json_args.
         arrow_json_args: Other json read options to pass to pyarrow.
 
     Returns:
@@ -317,6 +327,7 @@ def read_json(paths: Union[str, List[str]],
         filesystem=filesystem,
         ray_remote_args=ray_remote_args,
         open_stream_args=arrow_open_stream_args,
+        reader_args_fn=arrow_json_args_fn,
         **arrow_json_args)
 
 
@@ -327,6 +338,7 @@ def read_csv(paths: Union[str, List[str]],
              parallelism: int = 200,
              ray_remote_args: Dict[str, Any] = None,
              arrow_open_stream_args: Optional[Dict[str, Any]] = None,
+             arrow_csv_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
              **arrow_csv_args) -> Dataset[ArrowRow]:
     """Create an Arrow dataset from csv files.
 
@@ -348,6 +360,9 @@ def read_csv(paths: Union[str, List[str]],
         ray_remote_args: kwargs passed to ray.remote in the read tasks.
         arrow_open_stream_args: kwargs passed to
             pyarrow.fs.FileSystem.open_input_stream
+        arrow_csv_args_fn: Callable that returns a dictionary of read
+            arguments to use when reading each file to a block. Overrides any
+            duplicate keys from arrow_csv_args.
         arrow_csv_args: Other csv read options to pass to pyarrow.
 
     Returns:
@@ -360,6 +375,7 @@ def read_csv(paths: Union[str, List[str]],
         filesystem=filesystem,
         ray_remote_args=ray_remote_args,
         open_stream_args=arrow_open_stream_args,
+        reader_args_fn=arrow_csv_args_fn,
         **arrow_csv_args)
 
 
@@ -407,6 +423,7 @@ def read_numpy(paths: Union[str, List[str]],
                filesystem: Optional["pyarrow.fs.FileSystem"] = None,
                parallelism: int = 200,
                arrow_open_stream_args: Optional[Dict[str, Any]] = None,
+               numpy_load_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
                **numpy_load_args) -> Dataset[ArrowRow]:
     """Create an Arrow dataset from csv files.
 
@@ -427,6 +444,9 @@ def read_numpy(paths: Union[str, List[str]],
         parallelism: The amount of parallelism to use for the dataset.
         arrow_open_stream_args: kwargs passed to
             pyarrow.fs.FileSystem.open_input_stream
+        numpy_load_args_fn: Callable that returns a dictionary of read
+            arguments to use when reading each file to a block. Overrides any
+            duplicate keys from numpy_load_args.
         numpy_load_args: Other options to pass to np.load.
 
     Returns:
@@ -438,6 +458,7 @@ def read_numpy(paths: Union[str, List[str]],
         paths=paths,
         filesystem=filesystem,
         open_stream_args=arrow_open_stream_args,
+        reader_args_fn=numpy_load_args_fn,
         **numpy_load_args)
 
 

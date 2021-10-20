@@ -1,10 +1,11 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Callable
 
 if TYPE_CHECKING:
     import pyarrow
 
 from ray.data.block import BlockAccessor
-from ray.data.datasource.file_based_datasource import (FileBasedDatasource)
+from ray.data.datasource.file_based_datasource import (FileBasedDatasource,
+                                                       _resolve_kwargs)
 
 
 class JSONDatasource(FileBasedDatasource):
@@ -16,9 +17,14 @@ class JSONDatasource(FileBasedDatasource):
         ... [ArrowRow({"a": 1, "b": "foo"}), ...]
     """
 
-    def _read_file(self, f: "pyarrow.NativeFile", path: str, **reader_args):
+    def _read_file(self,
+                   f: "pyarrow.NativeFile",
+                   path: str,
+                   reader_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
+                   **reader_args):
         from pyarrow import json
 
+        reader_args = _resolve_kwargs(reader_args_fn, **reader_args)
         read_options = reader_args.pop(
             "read_options", json.ReadOptions(use_threads=False))
         return json.read_json(f, read_options=read_options, **reader_args)

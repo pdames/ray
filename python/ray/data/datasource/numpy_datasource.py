@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Callable
 
 import numpy as np
 
@@ -20,7 +20,11 @@ class NumpyDatasource(FileBasedDatasource):
 
     """
 
-    def _read_file(self, f: "pyarrow.NativeFile", path: str, **reader_args):
+    def _read_file(self,
+                   f: "pyarrow.NativeFile",
+                   path: str,
+                   reader_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
+                   **reader_args):
         from ray.data.extensions import TensorArray
         import pyarrow as pa
         # TODO(ekl) Ideally numpy can read directly from the file, but it

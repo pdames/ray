@@ -1,6 +1,6 @@
 import logging
 import itertools
-from typing import Callable, Optional, List, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, Optional, List, Union, TYPE_CHECKING
 
 import numpy as np
 
@@ -11,7 +11,7 @@ from ray.types import ObjectRef
 from ray.data.block import Block, BlockAccessor
 from ray.data.datasource.datasource import ReadTask
 from ray.data.datasource.file_based_datasource import (
-    FileBasedDatasource, _resolve_paths_and_filesystem)
+    FileBasedDatasource, _resolve_paths_and_filesystem, _resolve_kwargs)
 from ray.data.impl.block_list import BlockMetadata
 from ray.data.impl.progress_bar import ProgressBar
 from ray.data.impl.remote_fn import cached_remote_fn
@@ -39,6 +39,7 @@ class ParquetDatasource(FileBasedDatasource):
             filesystem: Optional["pyarrow.fs.FileSystem"] = None,
             columns: Optional[List[str]] = None,
             schema: Optional[Union[type, "pyarrow.lib.Schema"]] = None,
+            reader_args_fn: Callable[[], Dict[str, Any]] = lambda: {},
             _block_udf: Optional[Callable[[Block], Block]] = None,
             **reader_args) -> List[ReadTask]:
         """Creates and returns read tasks for a Parquet file-based datasource.
@@ -57,6 +58,7 @@ class ParquetDatasource(FileBasedDatasource):
         if len(paths) == 1:
             paths = paths[0]
 
+        reader_args = _resolve_kwargs(reader_args_fn, **reader_args)
         dataset_kwargs = reader_args.pop("dataset_kwargs", {})
         pq_ds = pq.ParquetDataset(
             paths,
