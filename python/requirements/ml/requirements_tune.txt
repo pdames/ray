@@ -32,7 +32,7 @@ pytorch-lightning==1.5.10
 shortuuid==1.0.1
 scikit-learn==0.24.2
 scikit-optimize==0.8.1
-sigopt==7.5.0
+sigopt==8.2.0
 timm==0.4.5
 transformers==4.10.0
 wandb==0.12.5
